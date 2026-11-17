@@ -1,0 +1,16 @@
+{
+  "name": "vitals-watch",
+  "version": "1.0.0",
+  "description": "Check Core Web Vitals (LCP, INP, CLS) against budgets — from your terminal or CI. Zero dependencies.",
+  "type": "module",
+  "bin": {
+    "vitals-watch": "./index.mjs"
+  },
+  "scripts": {
+    "scan": "node index.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
