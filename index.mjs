@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // vitals-watch — check Core Web Vitals against budgets, from terminal or CI.
-// Usage: vitals-watch <url> [--lab] [--strategy mobile|desktop] [--json]
+// Usage: vitals-watch <url> [--lab] [--local] [--strategy mobile|desktop] [--json]
 //        vitals-watch --config vitals-watch.json
 // Env:   PSI_API_KEY (free — https://developers.google.com/speed/docs/insights/v5/get-started)
+// --local runs a local Lighthouse audit (needs `npm i lighthouse chrome-launcher`) — no API key, no quota.
 
 const PSI = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
 
@@ -21,6 +22,32 @@ const LAB_KEYS = {
 
 const fmt = (k, v) => (k === "cls" ? v.toFixed(2) : `${Math.round(v)}ms`);
 const mark = (ok) => (ok ? "\x1b[32m✓\x1b[0m" : "\x1b[31m✗\x1b[0m");
+
+async function checkPageLocal(url, budgets, { strategy }) {
+  const { launch } = await import("chrome-launcher");
+  const lighthouse = (await import("lighthouse")).default;
+  const chrome = await launch({ chromeFlags: ["--headless", "--no-sandbox", "--disable-gpu", "--remote-allow-origins=*"] });
+  try {
+    const res = await lighthouse(url, {
+      port: chrome.port,
+      output: "json",
+      onlyCategories: ["performance"],
+      formFactor: strategy === "desktop" ? "desktop" : "mobile",
+      screenEmulation: strategy === "desktop"
+        ? { mobile: false, width: 1350, height: 940, deviceScaleFactor: 1 }
+        : undefined,
+    });
+    const a = res.lhr.audits;
+    const metrics = { lcp: a[LAB_KEYS.lcp].numericValue, inp: a[LAB_KEYS.tbt].numericValue, cls: a[LAB_KEYS.cls].numericValue };
+    const labels = { lcp: "LCP (lab)", inp: "TBT→INP (lab)", cls: "CLS" };
+    const results = Object.entries(budgets).map(([k, budget]) => ({
+      key: k, metric: labels[k] ?? k, value: metrics[k], budget, pass: metrics[k] <= budget,
+    }));
+    return { url, source: "local lab", results, pass: results.every((r) => r.pass) };
+  } finally {
+    await chrome.kill();
+  }
+}
 
 async function checkPage(url, budgets, { lab, strategy }) {
   const qs = new URLSearchParams({ url, category: "performance", strategy });
@@ -47,6 +74,7 @@ async function checkPage(url, budgets, { lab, strategy }) {
 
   const labels = { lcp: source === "lab" ? "LCP (lab)" : "LCP", inp: source === "lab" ? "TBT→INP (lab)" : "INP", cls: "CLS" };
   const results = Object.entries(budgets).map(([k, budget]) => ({
+    key: k,
     metric: labels[k] ?? k,
     value: metrics[k],
     budget,
@@ -59,6 +87,7 @@ async function main() {
   const args = process.argv.slice(2);
   const jsonOut = args.includes("--json");
   const lab = args.includes("--lab");
+  const local = args.includes("--local");
   const sIdx = args.indexOf("--strategy");
   const strategy = sIdx > -1 ? args[sIdx + 1] : "mobile";
   const cIdx = args.indexOf("--config");
@@ -81,13 +110,13 @@ async function main() {
   let allPass = true;
   for (const p of pages) {
     try {
-      const r = await checkPage(p.url, p.budgets, { lab, strategy });
+      const r = local ? await checkPageLocal(p.url, p.budgets, { strategy }) : await checkPage(p.url, p.budgets, { lab, strategy });
       out.push(r);
       if (!r.pass) allPass = false;
       if (!jsonOut) {
         console.log(`\n  ${r.url}  (${r.source} data, ${strategy})`);
         for (const m of r.results) {
-          console.log(`  ${mark(m.pass)} ${m.metric.padEnd(14)} ${fmt(m.metric, m.value)}  (budget ${fmt(m.metric, m.budget)})`);
+          console.log(`  ${mark(m.pass)} ${m.metric.padEnd(14)} ${fmt(m.key, m.value)}  (budget ${fmt(m.key, m.budget)})`);
         }
       }
     } catch (e) {

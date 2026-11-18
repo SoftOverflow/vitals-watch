@@ -34,6 +34,9 @@ vitals-watch example.com --lab
 # Desktop strategy
 vitals-watch example.com --strategy desktop
 
+# Local Lighthouse — no API key, no quota (needs `npm i` once)
+vitals-watch example.com --local
+
 # JSON output
 vitals-watch example.com --json
 ```
@@ -67,6 +70,7 @@ GitHub Action example:
 ## Notes
 
 - **Field vs lab**: field = real users from the Chrome UX Report (needs enough traffic to exist); lab = simulated Lighthouse run. When field data is missing, vitals-watch falls back to lab automatically and labels `TBT→INP` since INP can't be measured without interaction.
+- **`--local`** runs a real Lighthouse audit on your machine instead of calling PSI — handy for dev, for sites behind auth, or when the API quota is exhausted. `lighthouse` and `chrome-launcher` are devDependencies: `npm i` in the tool directory, plus a Chrome/Chromium binary (`CHROME_PATH` env var if it's not auto-detected).
 - Budgets default to Google's "good" thresholds. Tighten per page via config.
 
 Made by [SoftOverflow](https://www.softoverflow.com) — performance audits are part of the job.
